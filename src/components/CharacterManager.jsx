@@ -1,17 +1,19 @@
 import React, { useState } from "react";
 import WeeklyBossManager from "./WeeklyBossManager";
+import CrystalCalculator from "./CrystalCalculator";
 
 const CharacterManager = () => {
-  const [characters, setCharacters] = useState([]);
+  const [character, setCharacter] = useState(null);
+  const [characters, setCharacters] = useState({});
   const [selectedCharacter, setSelectedCharacter] = useState(null);
-  const [totalPrice, setTotalPrice] = useState(0);
+  const [searchName, setSearchName] = useState("");
   const API_KEY = import.meta.env.VITE_NEXON_API_KEY;
 
-  const fetchCharacter = async (name) => {
+  const fetchCharacter = async () => {
     try {
       const response = await fetch(
         `https://open.api.nexon.com/maplestory/v1/id?character_name=${encodeURIComponent(
-          name
+          searchName
         )}`,
         {
           headers: {
@@ -43,103 +45,108 @@ const CharacterManager = () => {
         job: data.character_class,
         image: data.character_image,
         bosses: [],
+        totalPrice: 0,
       };
 
-      setCharacters((prev) => [...prev, newCharacter]);
+      setCharacter(newCharacter);
+
+      if (!characters[data.character_name]) {
+        setCharacters((prev) => ({
+          ...prev,
+          [data.character_name]: newCharacter,
+        }));
+      }
     } catch (error) {
       console.error(error.message);
     }
   };
 
-  const handleCharacterSelect = (characterName) => {
-    const character = characters.find((c) => c.name === characterName);
-    setSelectedCharacter(character);
+  const handleBossUpdate = (updatedBosses, characterName) => {
+    setCharacters((prev) => {
+      const updatedCharacter = {
+        ...prev[characterName],
+        bosses: updatedBosses,
+        totalPrice: updatedBosses.reduce((sum, boss) => {
+          if (boss.selectedDifficulty && boss.prices[boss.selectedDifficulty]) {
+            const price =
+              boss.prices[boss.selectedDifficulty] /
+              Math.max(boss.partySize, 1);
+            return sum + Math.floor(price);
+          }
+          return sum;
+        }, 0),
+      };
+
+      return {
+        ...prev,
+        [characterName]: updatedCharacter,
+      };
+    });
   };
 
-  const handleCharacterDelete = (characterName) => {
-    setCharacters((prev) =>
-      prev.filter((character) => character.name !== characterName)
-    );
-    if (selectedCharacter?.name === characterName) {
-      setSelectedCharacter(null);
-    }
+  const selectCharacter = (name) => {
+    setSelectedCharacter(characters[name]);
   };
 
-  const handleBossUpdate = (updatedBosses) => {
-    if (!selectedCharacter) return;
+  const deleteCharacter = (name) => {
+    setCharacters((prev) => {
+      const updatedCharacters = { ...prev };
+      delete updatedCharacters[name];
+      return updatedCharacters;
+    });
+    setSelectedCharacter(null);
+  };
 
-    setCharacters((prev) =>
-      prev.map((character) =>
-        character.name === selectedCharacter.name
-          ? { ...character, bosses: updatedBosses }
-          : character
-      )
+  // 모든 캐릭터의 결정석 총합 계산
+  const calculateTotalCrystalPrice = () => {
+    return Object.values(characters).reduce(
+      (sum, char) => sum + (char.totalPrice || 0),
+      0
     );
-
-    // 총 결정석 가격 계산
-    const newTotalPrice = characters.reduce((sum, char) => {
-      const charPrice = char.bosses.reduce((bossSum, boss) => {
-        if (boss.selectedDifficulty && boss.prices[boss.selectedDifficulty]) {
-          const price =
-            boss.prices[boss.selectedDifficulty] / Math.max(boss.partySize, 1);
-          return bossSum + price;
-        }
-        return bossSum;
-      }, 0);
-      return sum + charPrice;
-    }, 0);
-
-    setTotalPrice(newTotalPrice);
   };
 
   return (
     <div className="character-manager">
       <h1>캐릭터 관리</h1>
-      <input
-        type="text"
-        placeholder="캐릭터명을 입력하세요."
-        id="search-character"
-      />
-      <button
-        onClick={() =>
-          fetchCharacter(document.getElementById("search-character").value)
-        }
-      >
-        검색
-      </button>
-
+      <div className="search-container">
+        <input
+          type="text"
+          placeholder="캐릭터명을 입력하세요."
+          value={searchName}
+          onChange={(e) => setSearchName(e.target.value)}
+        />
+        <button onClick={fetchCharacter}>검색</button>
+      </div>
       <div className="character-list">
-        {characters.map((character) => (
-          <div key={character.name} className="character-item">
-            <div>
-              <h3>{character.name}</h3>
-              <img src={character.image} alt={character.name} />
-              <p>월드: {character.world}</p>
-              <p>레벨: {character.level}</p>
-              <p>직업: {character.job}</p>
-            </div>
-            <button onClick={() => handleCharacterSelect(character.name)}>
-              선택
-            </button>
-            <button onClick={() => handleCharacterDelete(character.name)}>
-              삭제
-            </button>
+        {Object.values(characters).map((char) => (
+          <div key={char.name} className="character-item">
+            <h2>{char.name}</h2>
+            <img src={char.image} alt={char.name} />
+            <p>월드: {char.world}</p>
+            <p>레벨: {char.level}</p>
+            <p>직업: {char.job}</p>
+            <button onClick={() => selectCharacter(char.name)}>선택</button>
+            <button onClick={() => deleteCharacter(char.name)}>삭제</button>
           </div>
         ))}
       </div>
-
       {selectedCharacter && (
-        <>
+        <div className="selected-character">
           <h2>{selectedCharacter.name} - 보스 관리</h2>
           <WeeklyBossManager
             bosses={selectedCharacter.bosses}
-            onUpdateBosses={handleBossUpdate}
+            onUpdateBosses={(updatedBosses) =>
+              handleBossUpdate(updatedBosses, selectedCharacter.name)
+            }
           />
-        </>
+          <h3>{selectedCharacter.name}의 총 결정석 가격</h3>
+          <p>{selectedCharacter.totalPrice.toLocaleString()} 메소</p>
+        </div>
       )}
-
-      <h2>총 결정석 가격</h2>
-      <p>{totalPrice.toLocaleString()} 메소</p>
+      <div className="total-crystal-price">
+        <h2>모든 캐릭터의 총 결정석 가격</h2>
+        <CrystalCalculator totalPrice={calculateTotalCrystalPrice()} />
+      </div>
     </div>
   );
 };
