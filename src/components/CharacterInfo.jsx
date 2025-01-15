@@ -1,6 +1,10 @@
 import React from "react";
 
 function CharacterInfo({ characterData }) {
+  if (!characterData) {
+    return <p>캐릭터 정보를 가져오지 못했습니다.</p>; // characterData가 없을 경우 처리
+  }
+
   return (
     <div className="CharacterInfo">
       <h2>{characterData.character_name}</h2>
